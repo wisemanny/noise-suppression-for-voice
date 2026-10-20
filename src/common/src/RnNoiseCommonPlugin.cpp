@@ -33,6 +33,13 @@ RnNoiseCommonPlugin::process(const float *const *in, float **out, size_t sampleF
         return;
     }
 
+    /* Defensive: init() was never called (or was called with 0 channels), so there is
+     * nothing to denoise with. Leave the buffer untouched (host already copied input
+     * to output) instead of indexing an empty vector. */
+    if (m_channels.empty()) {
+        return;
+    }
+
     if (m_prevRetroactiveVADGraceBlocks > retroactiveVADGraceBlocks) {
         /* TODO: do not be lazy and adjust output queue directly.
          * For now, just re-init the plugin to prevent excess latency.

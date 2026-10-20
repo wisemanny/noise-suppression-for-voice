@@ -613,7 +613,15 @@ public:
                           | Vst2::kVstClockValid   | Vst2::kVstNanosValid;
 
             auto result = hostCallback (&vstEffect, Vst2::audioMasterGetTime, 0, flags, nullptr, 0);
-            ti = reinterpret_cast<Vst2::VstTimeInfo*> (result);
+
+            /* RNNoise patch: some hosts (EqualizerAPO 1.4.2 among them) answer
+             * audioMasterGetTime with a non-pointer value. JUCE dereferences the result
+             * unconditionally, which faults inside audiodg before processBlock() is ever
+             * called. This plugin has no use for transport information, so ignore it.
+             */
+            juce::ignoreUnused (result);
+
+            ti = nullptr;
         }
 
         if (ti == nullptr || ti->sampleRate <= 0)

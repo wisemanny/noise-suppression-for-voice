@@ -3,6 +3,29 @@
 
 #include "common/RnNoiseCommonPlugin.h"
 
+#ifndef NOMINMAX
+ #define NOMINMAX
+#endif
+#include <windows.h>
+
+#include <algorithm>
+
+namespace {
+    /* audiodg is a shared host process: an exception escaping the DSP would take
+     * down every audio stream on the machine. On fault we simply leave the
+     * buffer untouched, i.e. pass the input through. No C++ objects in this
+     * frame: __try requires that on MSVC.
+     */
+    void runDsp(RnNoiseCommonPlugin *plugin, const float *const *in, float **out, size_t frames,
+                float threshold, uint32_t grace, uint32_t retroactiveGrace) {
+        __try {
+            plugin->process(in, out, frames, threshold, grace, retroactiveGrace);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            /* passthrough */
+        }
+    }
+}
+
 //==============================================================================
 RnNoiseAudioProcessor::RnNoiseAudioProcessor()
         : AudioProcessor(BusesProperties()
@@ -77,7 +100,11 @@ void RnNoiseAudioProcessor::changeProgramName(int index, const juce::String &new
 void RnNoiseAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     juce::ignoreUnused(sampleRate, samplesPerBlock);
 
-    m_rnNoisePlugin = std::make_shared<RnNoiseCommonPlugin>(static_cast<uint32_t>(getTotalNumInputChannels()));
+    auto channelCount = getTotalNumInputChannels();
+    if (channelCount <= 0)
+        channelCount = 1;
+
+    m_rnNoisePlugin = std::make_shared<RnNoiseCommonPlugin>(static_cast<uint32_t>(channelCount));
     m_rnNoisePlugin->init();
 }
 
@@ -106,12 +133,26 @@ void RnNoiseAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
+    if (totalNumInputChannels <= 0)
+        totalNumInputChannels = std::min(buffer.getNumChannels(), 8);
+
+    totalNumInputChannels = std::min(totalNumInputChannels, 8);
+    totalNumOutputChannels = std::min(totalNumOutputChannels, 8);
+
+    if (m_rnNoisePlugin == nullptr) {
+        m_rnNoisePlugin = std::make_shared<RnNoiseCommonPlugin>(static_cast<uint32_t>(std::max(1, totalNumInputChannels)));
+        m_rnNoisePlugin->init();
+    }
+
+    const auto internalChannels = m_rnNoisePlugin->getInternalChannelCount();
+    if (internalChannels != static_cast<size_t>(totalNumInputChannels)) {
+        m_rnNoisePlugin = std::make_shared<RnNoiseCommonPlugin>(static_cast<uint32_t>(totalNumInputChannels));
+        m_rnNoisePlugin->init();
+    }
+
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
     // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
 
@@ -122,9 +163,9 @@ void RnNoiseAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
         out[channel] = buffer.getWritePointer(channel);
     }
 
-    m_rnNoisePlugin->process(in, out, static_cast<size_t>(buffer.getNumSamples()), m_vadThresholdParam->get(),
-                             static_cast<uint32_t>(m_vadGracePeriodParam->get()),
-                             static_cast<uint32_t>(m_vadRetroactiveGracePeriodParam->get()));
+    runDsp(m_rnNoisePlugin.get(), in, out, static_cast<size_t>(buffer.getNumSamples()), m_vadThresholdParam->get(),
+           static_cast<uint32_t>(m_vadGracePeriodParam->get()),
+           static_cast<uint32_t>(m_vadRetroactiveGracePeriodParam->get()));
 }
 
 //==============================================================================

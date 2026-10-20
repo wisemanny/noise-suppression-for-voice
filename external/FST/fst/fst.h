@@ -524,6 +524,14 @@ typedef void (*AEffectProcessDoubleProc)(struct _fstEffect*, double**, double**,
 
 typedef FST_UNKNOWN(AEffectDispatcherProc) audioMasterCallback;
 
+/* ABI WARNING: this is the VST2 AEffect layout, not an FST-private struct.
+ * Hosts (EqualizerAPO, Reaper, ...) read processReplacing / processDoubleReplacing
+ * at fixed byte offsets: 120 / 128 on 64-bit, with `magic` at 0 and `object` at 96.
+ * On 64-bit the pointer-sized flags/resvd1/resvd2 fields plus _pad2/float1 land on
+ * exactly the same offsets as the official 32-bit flags + float fields. Do not
+ * remove `magic`, and do not shrink those fields: doing so shifts object and
+ * processReplacing by 8-16 bytes and hosts end up calling a null pointer.
+ */
 typedef struct _fstEffect {
   t_fstInt32 magic; /* @0 0x56737450, aka 'VstP' */
   /* auto-padding in place */

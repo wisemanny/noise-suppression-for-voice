@@ -49,6 +49,9 @@ public:
     void resetStats();
     const RnNoiseStats getStats() const;
 
+    /* Number of channels the denoise state was actually initialised for. */
+    size_t getInternalChannelCount() const { return m_channels.size(); }
+
 private:
 
     void createDenoiseState();
