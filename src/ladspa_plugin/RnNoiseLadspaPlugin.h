@@ -6,9 +6,24 @@
 using namespace ladspa;
 
 namespace port_info_custom {
+    // Named constexpr arrays instead of string literals, see note in ladspa++.h port_info_common.
+    namespace strings {
+        constexpr static char vad_threshold_name[] = "VAD Threshold (%)";
+        constexpr static char vad_threshold_desc[] =
+                "If probability of sound being a voice is lower than this threshold - silence will be returned";
+        constexpr static char vad_grace_period_name[] = "VAD Grace Period (ms)";
+        constexpr static char vad_grace_period_desc[] =
+                "For how long after the last voice detection the output won't be silenced. This helps when ends of words/sentences are being cut off.";
+        constexpr static char retroactive_vad_grace_name[] = "Retroactive VAD Grace (ms)";
+        constexpr static char retroactive_vad_grace_desc[] =
+                "Similar to 'VAD Grace Period' but for starts of words/sentences. Warning, this introduces latency!";
+        constexpr static char placeholder_name[] = "Placeholder";
+        constexpr static char placeholder_desc[] = "Currently unused.";
+    }
+
     constexpr static port_info_t vad_threshold_input = {
-            "VAD Threshold (%)",
-            "If probability of sound being a voice is lower than this threshold - silence will be returned",
+            strings::vad_threshold_name,
+            strings::vad_threshold_desc,
             port_types::input | port_types::control,
             {
                     port_hints::bounded_below | port_hints::bounded_above | port_hints::integer |
@@ -18,8 +33,8 @@ namespace port_info_custom {
             }
     };
     constexpr static port_info_t vad_grace_period_blocks_input = {
-            "VAD Grace Period (ms)",
-            "For how long after the last voice detection the output won't be silenced. This helps when ends of words/sentences are being cut off.",
+            strings::vad_grace_period_name,
+            strings::vad_grace_period_desc,
             port_types::input | port_types::control,
             {
                     port_hints::bounded_below | port_hints::bounded_above | port_hints::integer |
@@ -29,8 +44,8 @@ namespace port_info_custom {
             }
     };
     constexpr static port_info_t retroactive_vad_grace_blocks_input = {
-            "Retroactive VAD Grace (ms)",
-            "Similar to 'VAD Grace Period' but for starts of words/sentences. Warning, this introduces latency!",
+            strings::retroactive_vad_grace_name,
+            strings::retroactive_vad_grace_desc,
             port_types::input | port_types::control,
             {
                     port_hints::bounded_below | port_hints::bounded_above | port_hints::integer |
@@ -40,8 +55,8 @@ namespace port_info_custom {
             }
     };
     constexpr static port_info_t placeholder_input = {
-            "Placeholder",
-            "Currently unused.",
+            strings::placeholder_name,
+            strings::placeholder_desc,
             port_types::input | port_types::control,
             {0, 0.f, 0.f}
     };

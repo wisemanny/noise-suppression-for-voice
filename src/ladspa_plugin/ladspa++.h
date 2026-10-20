@@ -414,64 +414,79 @@ namespace ladspa
 //! A list of very common ports
     namespace port_info_common
     {
+        // Port strings are named constexpr arrays rather than string literals: MSVC rejects
+        // (C7658) constexpr port_info_t objects holding string-literal pointers once they are
+        // used through the port_array_t template arguments.
+        namespace strings
+        {
+            constexpr static char audio_input_name[]          = "Input";
+            constexpr static char audio_input_desc[]          = "Effect's audio input (mono).";
+            constexpr static char audio_input_l_name[]        = "Input (L)";
+            constexpr static char audio_input_l_desc[]        = "Effect's audio input (left).";
+            constexpr static char audio_input_r_name[]        = "Input (R)";
+            constexpr static char audio_input_r_desc[]        = "Effect's audio input (right).";
+            constexpr static char audio_output_name[]         = "Output";
+            constexpr static char audio_output_desc[]         = "Effect's audio output (mono).";
+            constexpr static char audio_output_l_name[]       = "Output (L)";
+            constexpr static char audio_output_l_desc[]       = "Effect's audio output (mono).";
+            constexpr static char audio_output_r_name[]       = "Output (R)";
+            constexpr static char audio_output_r_desc[]       = "Effect's audio output (right).";
+            constexpr static char final_port_desc[]           = "Final port (internal use only).";
+        }
+
         constexpr static port_info_t audio_input = {
-                "Input", "Effect's audio input (mono).",
+                strings::audio_input_name, strings::audio_input_desc,
                 port_types::input | port_types::audio, {0,0,0} };
         constexpr static port_info_t audio_input_l = {
-                "Input (L)", "Effect's audio input (left).",
+                strings::audio_input_l_name, strings::audio_input_l_desc,
                 port_types::input | port_types::audio, {0,0,0} };
         constexpr static port_info_t audio_input_r = {
-                "Input (R)", "Effect's audio input (right).",
+                strings::audio_input_r_name, strings::audio_input_r_desc,
                 port_types::input | port_types::audio, {0,0,0} };
 
         constexpr static port_info_t audio_output = {
-                "Output", "Effect's audio output (mono).",
+                strings::audio_output_name, strings::audio_output_desc,
                 port_types::output | port_types::audio, {0,0,0} };
         constexpr static port_info_t audio_output_l = {
-                "Output (L)", "Effect's audio output (mono).",
+                strings::audio_output_l_name, strings::audio_output_l_desc,
                 port_types::output | port_types::audio, {0,0,0} };
         constexpr static port_info_t audio_output_r = {
-                "Output (R)", "Effect's audio output (right).",
+                strings::audio_output_r_name, strings::audio_output_r_desc,
                 port_types::output | port_types::audio, {0,0,0} };
 
         // more ports can be added on request...
 
         //! port marking the end, recognized via the nullptr
         constexpr static port_info_t final_port = { nullptr,
-                                                    "Final port (internal use only).", 0, {0,0,0} };
+                                                    strings::final_port_desc, 0, {0,0,0} };
     }
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 /*
  *  Return value specialisations for port_array_t
  */
-    template<class contained_type, const bitmask<port_types>* bm, class Enable = void>
+    // These are keyed on plain bools instead of a pointer to a constexpr bitmask: dereferencing a
+    // pointer template parameter inside enable_if triggers an internal compiler error in MSVC.
+    template<class contained_type, bool is_control>
     struct return_value_base_type
     {
         typedef buffer_template<contained_type> type;
     };
 
-    template<class contained_type, const bitmask<port_types>* bm>
-    struct return_value_base_type
-            <contained_type, bm,
-                    typename std::enable_if<bm->is(port_types::control)>::type>
+    template<class contained_type>
+    struct return_value_base_type<contained_type, true>
     {
         typedef pointer_template<contained_type> type;
     };
 
-    template<class base_type,
-            const bitmask<port_types>* bm,
-            class Enable = void>
+    template<class base_type, bool is_output>
     struct return_value_access_type
     {
         typedef const base_type type;
     };
 
-    template<class base_type,
-            const bitmask<port_types>* bm>
-    struct return_value_access_type
-            <base_type, bm,
-                    typename std::enable_if<bm->is(port_types::output)>::type>
+    template<class base_type>
+    struct return_value_access_type<base_type, true>
     {
         typedef base_type type;
     };
@@ -499,17 +514,15 @@ namespace ladspa
     {
         class type_helpers
         {
-            template<const bitmask<port_types>* bm>
-            using t1 = typename return_value_access_type<data, bm>::type;
+            template<bool is_output>
+            using t1 = typename return_value_access_type<data, is_output>::type;
 
         public:
             template<std::size_t PortName>
             class type_at_port
             {
-                static constexpr auto arr_elem = PortDesArray[PortName];
-                static constexpr auto descr = arr_elem.descriptor;
             public:
-                typedef t1<&descr> type; // data or const data
+                typedef t1<PortDesArray[PortName].descriptor.is(port_types::output)> type; // data or const data
             };
 
             template<std::size_t ...Is>
@@ -642,18 +655,17 @@ namespace ladspa
         class type_helpers
         {
 
-            template<const bitmask<port_types>* bm>
-            using t1 = typename return_value_access_type<data, bm>::type;
-            template<const bitmask<port_types>* bm>
-            using return_value_preparation = typename return_value_base_type<t1<bm>, bm>::type;
+            template<bool is_output>
+            using t1 = typename return_value_access_type<data, is_output>::type;
+            template<bool is_output, bool is_control>
+            using return_value_preparation = typename return_value_base_type<t1<is_output>, is_control>::type;
         public:
             template<std::size_t PortName>
             class type_at_port
             {
-                static constexpr auto arr_elem = PortDesArray[PortName];
-                static constexpr auto descr = arr_elem.descriptor;
             public:
-                typedef return_value_preparation<&descr> type;
+                typedef return_value_preparation<PortDesArray[PortName].descriptor.is(port_types::output),
+                                                 PortDesArray[PortName].descriptor.is(port_types::control)> type;
             };
 
             template<class T> struct _storage_t {
