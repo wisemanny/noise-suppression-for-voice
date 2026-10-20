@@ -23,7 +23,7 @@
 namespace juce
 {
 
-#if JUCE_MSVC && ! defined (__INTEL_COMPILER)
+#if JUCE_MSVC && JUCE_INTEL && ! defined (__INTEL_COMPILER)
  #pragma intrinsic (__cpuid)
  #pragma intrinsic (__rdtsc)
 #endif
@@ -41,7 +41,13 @@ void Logger::outputDebugString (const String& text)
 
 //==============================================================================
 
-#if JUCE_MINGW || JUCE_CLANG
+#if JUCE_ARM
+static void callCPUID (int result[4], int)
+{
+    // No CPUID instruction on ARM; report "no x86 features".
+    result[0] = result[1] = result[2] = result[3] = 0;
+}
+#elif JUCE_MINGW || JUCE_CLANG
 static void callCPUID (int result[4], uint32 type)
 {
   uint32 la = (uint32) result[0], lb = (uint32) result[1],
@@ -437,7 +443,13 @@ double Time::getMillisecondCounterHiRes() noexcept       { return hiResCounterHa
 //==============================================================================
 static int64 juce_getClockCycleCounter() noexcept
 {
-   #if JUCE_MSVC
+   #if JUCE_ARM
+    // No rdtsc on ARM; fall back to the high-resolution performance counter.
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter (&counter);
+    return (int64) counter.QuadPart;
+
+   #elif JUCE_MSVC
     // MS intrinsics version...
     return (int64) __rdtsc();
 

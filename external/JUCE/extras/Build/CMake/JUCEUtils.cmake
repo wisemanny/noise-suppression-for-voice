@@ -788,6 +788,19 @@ function(_juce_create_windows_package source_target dest_target extension defaul
     set(is_x64 $<EQUAL:${CMAKE_SIZEOF_VOID_P},8>)
     set(arch_string $<IF:${is_x64},${x64folder},${x32folder}>)
 
+    # Windows on ARM: the VST3 spec uses "arm64-win" (and "arm-win" for 32-bit ARM).
+    # CMAKE_VS_PLATFORM_NAME is set by the Visual Studio generators; CMAKE_SYSTEM_PROCESSOR
+    # covers Ninja/Makefile builds (native or via a toolchain file).
+    set(_juce_target_arch "${CMAKE_VS_PLATFORM_NAME}")
+    if(NOT _juce_target_arch)
+        set(_juce_target_arch "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    if(_juce_target_arch MATCHES "^(ARM64|arm64|aarch64|ARM64EC)$")
+        set(arch_string "arm64-win")
+    elseif(_juce_target_arch MATCHES "^(ARM|arm|armv7.*)$")
+        set(arch_string "arm-win")
+    endif()
+
     set_target_properties(${dest_target}
         PROPERTIES
         PDB_OUTPUT_DIRECTORY "${products_folder}"
