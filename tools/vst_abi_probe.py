@@ -122,16 +122,25 @@ def process(effect, host):
 
     proc = PROCESS(ptr(OFF_PROCESS_REPLACING))
 
+    # The host passes exactly numInputs/numOutputs pointers. A stereo plugin fed a
+    # single pointer reads past the array and faults, so honour what it advertises.
+    n_in = max(1, i32(OFF_NUM_INPUTS))
+    n_out = max(1, i32(OFF_NUM_OUTPUTS))
+
     n = host.sample_rate * 3
     rng = np.random.default_rng(7)
-    src = (rng.standard_normal(n) * 0.02).astype(np.float32)     # ~-50 dBFS "room tone"
-    out = np.zeros(n, dtype=np.float32)
+    mono = (rng.standard_normal(n) * 0.02).astype(np.float32)     # ~-50 dBFS "room tone"
+    src = [mono.copy() for _ in range(n_in)]
+    out = [np.zeros(n, dtype=np.float32) for _ in range(n_out)]
 
     for pos in range(0, n - host.block_size + 1, host.block_size):
-        chunk = np.ascontiguousarray(src[pos:pos + host.block_size])
-        dst = out[pos:pos + host.block_size]
-        in_ptrs = (C.POINTER(C.c_float) * 1)(chunk.ctypes.data_as(C.POINTER(C.c_float)))
-        out_ptrs = (C.POINTER(C.c_float) * 1)(dst.ctypes.data_as(C.POINTER(C.c_float)))
+        chunks = [np.ascontiguousarray(ch[pos:pos + host.block_size]) for ch in src]
+        dsts = [ch[pos:pos + host.block_size] for ch in out]
+
+        in_ptrs = (C.POINTER(C.c_float) * n_in)(
+            *[c.ctypes.data_as(C.POINTER(C.c_float)) for c in chunks])
+        out_ptrs = (C.POINTER(C.c_float) * n_out)(
+            *[c.ctypes.data_as(C.POINTER(C.c_float)) for c in dsts])
         proc(effect, in_ptrs, out_ptrs, host.block_size)
 
     dispatcher(effect, 26, 0, 0, None, 0.0)                      # effMainsChanged(0)
@@ -140,12 +149,15 @@ def process(effect, host):
     def db(v):
         return 20 * np.log10(max(float(v), 1e-12))
 
-    zeros = float((out == 0).mean())
+    zeros = float(np.mean([(ch == 0).mean() for ch in out]))
+    all_in = np.concatenate([ch.astype(np.float64) for ch in src])
+    all_out = np.concatenate([ch.astype(np.float64) for ch in out])
     print()
+    print("channels: %d in / %d out" % (n_in, n_out))
     print("input : peak %.1f dBFS  rms %.1f dBFS  zeros %.1f %%" %
-          (db(np.abs(src).max()), db(np.sqrt((src.astype(np.float64) ** 2).mean())), 100 * (src == 0).mean()))
+          (db(np.abs(all_in).max()), db(np.sqrt((all_in ** 2).mean())), 100 * (all_in == 0).mean()))
     print("output: peak %.1f dBFS  rms %.1f dBFS  zeros %.1f %%" %
-          (db(np.abs(out).max()), db(np.sqrt((out.astype(np.float64) ** 2).mean())), 100 * zeros))
+          (db(np.abs(all_out).max()), db(np.sqrt((all_out ** 2).mean())), 100 * zeros))
     print("host callbacks: %d" % host.calls)
     print("VERDICT:", "PROCESSED (gate muted the noise)" if zeros > 0.5 else "NOT PROCESSED")
 
@@ -158,6 +170,10 @@ def main():
 
     host = Host()
     lib = C.CDLL(args.dll)
+    try:
+        lib.VSTPluginMain
+    except AttributeError:
+        raise SystemExit("%s is not a VST2 plugin (no VSTPluginMain export)" % args.dll)
     lib.VSTPluginMain.restype = C.c_void_p
     lib.VSTPluginMain.argtypes = [C.c_void_p]
     effect = lib.VSTPluginMain(C.cast(host._cb, C.c_void_p))
