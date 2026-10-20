@@ -137,6 +137,39 @@ false "the plugin is not running" conclusions.
 
 Use a WASAPI **shared-mode** capture instead — that is the path the APO lives in.
 
+Beyond the missing DSP, dshow negotiates a different stream, and on the
+Sennheiser Profile a strange one. Measured 2026-10-20:
+
+| | dshow (`ffmpeg`) | WASAPI shared (APO) |
+|---|---|---|
+| rate / layout | 44 100 Hz, stereo by default | 48 000 Hz, mono |
+| right channel (ch1) | direct microphone | — |
+| left channel (ch0) | same mic, **delayed 30 ms** | — |
+
+ch1 is the direct signal. ch0 correlates 0.97 with ch1 shifted by exactly
+1440 samples (30.00 ms): it is a delayed monitor copy, about 22 dB down while
+the input is quiet and rising to the level of ch1 during loud speech.
+
+That is the echo. Summing the pair — what any mono downmix does — adds a
+signal to its own 30 ms copy, i.e. a comb filter with notches every 33 Hz and
+a **−7 dB slap at 30 ms** (measured on live speech). It is not room reverb and
+it is not the APO.
+
+`-ac 1` is not a safe workaround, because the mono path does not reliably carry
+the mic: in one 20 s run `-ac 1` recorded only room tone (peak −28 dBFS) while
+the APO path captured the same speech at −21 dBFS rms. `-ac 1` is also not a
+downmix of the two channels, so the 30 ms copy is not the explanation for what
+lands in that file.
+
+For a raw reference, capture stereo and keep the direct channel:
+
+```powershell
+ffmpeg -f dshow -i audio="Sennheiser (Sennheiser Profile)" -af "pan=mono|c0=c1" -ar 48000 take.wav
+```
+
+For anything that must match what EqualizerAPO does, use the WASAPI recorder in
+§4.2 — it sees the same stream the APO does.
+
 ### 4.2 Recorder
 
 `tools/apo-capture` (.NET 8 + NAudio 2.2.1):
